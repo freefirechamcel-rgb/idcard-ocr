@@ -3,7 +3,8 @@ ID Card OCR extraction service.
 Replaces the Gemini-based extraction step in the Make.com Telegram bot scenario.
 
 POST /extract
-  body: raw image bytes (Content-Type: application/octet-stream), or
+  body: a multipart/form-data file field, or raw image bytes
+        (Content-Type: application/octet-stream), or
         {"image_base64": "<base64-encoded JPEG/PNG>"}
   returns: {"topLeft": "", "text1": "", ... "text10": "", "middle1": "",
             "middle2": "", "middle3": "", "imageUrl": ""}
@@ -130,7 +131,15 @@ def extract_fields(lines: list[str]) -> dict:
 
 @app.route("/extract", methods=["POST"])
 def extract():
-    image_bytes = request.get_data() or b""
+    image_bytes = b""
+
+    if request.files:
+        first_file = next(iter(request.files.values()), None)
+        if first_file is not None:
+            image_bytes = first_file.read()
+
+    if not image_bytes:
+        image_bytes = request.get_data() or b""
 
     if not image_bytes or (
         request.content_type and "json" in request.content_type.lower()
@@ -144,7 +153,7 @@ def extract():
                 return jsonify({"error": f"invalid base64 data: {exc}"}), 400
 
     if not image_bytes:
-        return jsonify({"error": "request body is empty; send raw image bytes or JSON image_base64"}), 400
+        return jsonify({"error": "request body is empty; send a multipart file, raw image bytes, or JSON image_base64"}), 400
 
     try:
         image = Image.open(io.BytesIO(image_bytes))
@@ -174,4 +183,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
- 
