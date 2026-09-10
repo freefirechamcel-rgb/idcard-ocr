@@ -3,7 +3,8 @@ ID Card OCR extraction service.
 Replaces the Gemini-based extraction step in the Make.com Telegram bot scenario.
 
 POST /extract
-  body: {"image_base64": "<base64-encoded JPEG/PNG>"}
+  body: raw image bytes (Content-Type: application/octet-stream), or
+        {"image_base64": "<base64-encoded JPEG/PNG>"}
   returns: {"topLeft": "", "text1": "", ... "text10": "", "middle1": "",
             "middle2": "", "middle3": "", "imageUrl": ""}
 
@@ -129,13 +130,23 @@ def extract_fields(lines: list[str]) -> dict:
 
 @app.route("/extract", methods=["POST"])
 def extract():
-    payload = request.get_json(silent=True) or {}
-    b64 = payload.get("image_base64") or payload.get("data")
-    if not b64:
-        return jsonify({"error": "image_base64 field is required"}), 400
+    image_bytes = request.get_data() or b""
+
+    if not image_bytes or (
+        request.content_type and "json" in request.content_type.lower()
+    ):
+        payload = request.get_json(silent=True) or {}
+        b64 = payload.get("image_base64") or payload.get("data")
+        if b64:
+            try:
+                image_bytes = base64.b64decode(b64)
+            except Exception as exc:
+                return jsonify({"error": f"invalid base64 data: {exc}"}), 400
+
+    if not image_bytes:
+        return jsonify({"error": "request body is empty; send raw image bytes or JSON image_base64"}), 400
 
     try:
-        image_bytes = base64.b64decode(b64)
         image = Image.open(io.BytesIO(image_bytes))
     except Exception as exc:
         log.exception("failed to decode image")
@@ -163,4 +174,4 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
+ 
